@@ -1,4 +1,7 @@
+"use client";
+
 import { SignUp } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 
 export default function SignUpPage() {
   return (
@@ -17,14 +20,9 @@ export default function SignUpPage() {
         <div className="flex justify-center">
           <SignUp 
             appearance={{
+              baseTheme: dark,
               variables: {
                 colorPrimary: '#3b82f6',
-                colorBackground: '#0f172a',
-                colorText: '#f8fafc',
-                colorTextSecondary: '#94a3b8',
-                colorInputBackground: '#1e293b',
-                colorInputText: '#f8fafc',
-                colorBorder: '#334155'
               },
               elements: {
                 card: 'border border-slate-800 shadow-2xl rounded-2xl bg-slate-900/50 backdrop-blur-xl',
@@ -34,7 +32,7 @@ export default function SignUpPage() {
                 headerTitle: 'hidden',
                 headerSubtitle: 'hidden',
               }
-            }}
+            } as any}
           />
         </div>
       </div>

@@ -1,6 +1,9 @@
 import Link from 'next/link';
+import { auth } from '@clerk/nextjs/server';
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const { userId } = await auth();
+  const isAuthenticated = !!userId;
   return (
     <div className="relative min-h-screen bg-slate-950 text-slate-100 overflow-x-hidden">
       {/* Background blobs for premium glassmorphism glow */}
@@ -25,15 +28,26 @@ export default function LandingPage() {
           </nav>
 
           <div className="flex items-center gap-4">
-            <Link href="/sign-in" className="text-sm font-medium text-slate-300 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-slate-900/50">
-              Sign In
-            </Link>
-            <Link href="/sign-up" className="relative group overflow-hidden rounded-lg p-[1px] focus:outline-none">
-              <span className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg group-hover:scale-105 transition-transform duration-300" />
-              <span className="relative block px-4 py-2 text-sm font-semibold bg-slate-950 text-white rounded-[7px] group-hover:bg-slate-950/90 transition-all duration-300">
-                Get Started
-              </span>
-            </Link>
+            {isAuthenticated ? (
+              <Link href="/dashboard" className="relative group overflow-hidden rounded-lg p-[1px] focus:outline-none">
+                <span className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg group-hover:scale-105 transition-transform duration-300" />
+                <span className="relative block px-4 py-2 text-sm font-semibold bg-slate-950 text-white rounded-[7px] group-hover:bg-slate-950/90 transition-all duration-300">
+                  Go to Dashboard
+                </span>
+              </Link>
+            ) : (
+              <>
+                <Link href="/sign-in" className="text-sm font-medium text-slate-300 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-slate-900/50">
+                  Sign In
+                </Link>
+                <Link href="/sign-up" className="relative group overflow-hidden rounded-lg p-[1px] focus:outline-none">
+                  <span className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg group-hover:scale-105 transition-transform duration-300" />
+                  <span className="relative block px-4 py-2 text-sm font-semibold bg-slate-950 text-white rounded-[7px] group-hover:bg-slate-950/90 transition-all duration-300">
+                    Get Started
+                  </span>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -58,9 +72,15 @@ export default function LandingPage() {
         </p>
 
         <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <Link href="/sign-up" className="px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/35 transition-all transform hover:-translate-y-0.5 text-center min-w-[200px]">
-            Try CodePulse Free
-          </Link>
+          {isAuthenticated ? (
+            <Link href="/dashboard" className="px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/35 transition-all transform hover:-translate-y-0.5 text-center min-w-[200px]">
+              Go to Dashboard
+            </Link>
+          ) : (
+            <Link href="/sign-up" className="px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/35 transition-all transform hover:-translate-y-0.5 text-center min-w-[200px]">
+              Try CodePulse Free
+            </Link>
+          )}
           <a href="#demo" className="px-8 py-3.5 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 font-semibold rounded-lg backdrop-blur-sm transition-all transform hover:-translate-y-0.5 text-center min-w-[200px]">
             See It In Action
           </a>
@@ -192,8 +212,8 @@ async function registerUser(username, password) {
             Create an account in seconds and unlock automated code analysis for your projects.
           </p>
           <div className="mt-8">
-            <Link href="/sign-up" className="inline-block px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/20 hover:shadow-blue-500/35 transition-all transform hover:-translate-y-0.5">
-              Get Started for Free
+            <Link href={isAuthenticated ? "/dashboard" : "/sign-up"} className="inline-block px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/20 hover:shadow-blue-500/35 transition-all transform hover:-translate-y-0.5">
+              {isAuthenticated ? "Go to Dashboard" : "Get Started for Free"}
             </Link>
           </div>
         </div>
