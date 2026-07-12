@@ -3,6 +3,7 @@
 import { useUser } from "@clerk/nextjs";
 import { useEffect, useRef } from "react";
 
+// Sync user state with backend once
 export default function SyncUser() {
   const { user, isLoaded } = useUser();
   const hasSynced = useRef(false);
@@ -17,25 +18,20 @@ export default function SyncUser() {
         email: user.primaryEmailAddress?.emailAddress || ""
       };
 
-      console.log("[SyncUser] Syncing user with backend database...", payload);
+      console.log("[SyncUser] Syncing user with backend...", payload);
 
       fetch("http://localhost:5000/api/users/sync", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       })
         .then(async (res) => {
-          if (!res.ok) {
-            throw new Error(`Sync failed with status: ${res.status}`);
-          }
+          if (!res.ok) throw new Error(`Status: ${res.status}`);
           const data = await res.json();
-          console.log("[SyncUser] Backend user sync success:", data);
+          console.log("[SyncUser] Sync success:", data);
         })
         .catch((err) => {
-          console.error("[SyncUser] Backend user sync failed:", err.message);
-          // Set to false to allow retrying if it failed
+          console.error("[SyncUser] Sync failed:", err.message);
           hasSynced.current = false;
         });
     }

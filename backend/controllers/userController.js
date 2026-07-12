@@ -1,17 +1,12 @@
 const pool = require('../config/db');
 
-/**
- * Synchronize user from Clerk auth webhook/frontend trigger.
- * Safe UPSERT based on unique user email.
- * POST /api/users/sync
- */
+// Sync Clerk user with PostgreSQL database
 async function syncUser(req, res) {
   const { id, name, email } = req.body;
 
-  // Simple request body validation
   if (!id || !name || !email) {
     return res.status(400).json({
-      error: 'Invalid request body. Fields "id", "name", and "email" are required.'
+      error: 'Fields "id", "name", and "email" are required.'
     });
   }
 
@@ -30,14 +25,34 @@ async function syncUser(req, res) {
       user: result.rows[0]
     });
   } catch (err) {
-    console.error('[UserController] Database UPSERT failed:', err.message);
-    res.status(500).json({
-      error: 'Database operation failed',
-      details: err.message
-    });
+    console.error('[UserController] Sync failed:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// Fetch user profile with credits
+async function getUserProfile(req, res) {
+  const { userId } = req.params;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'Parameter "userId" is required.' });
+  }
+
+  const query = 'SELECT id, name, email, credits, created_at FROM users WHERE id = $1';
+
+  try {
+    const result = await pool.query(query, [userId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    res.status(200).json({ user: result.rows[0] });
+  } catch (err) {
+    console.error('[UserController] Fetch profile failed:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 }
 
 module.exports = {
-  syncUser
+  syncUser,
+  getUserProfile
 };

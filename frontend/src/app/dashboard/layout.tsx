@@ -13,7 +13,6 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
 
-  // Helper to determine active link
   const isActive = (path: string) => {
     if (path === '/dashboard') {
       return pathname === '/dashboard';
@@ -21,7 +20,6 @@ export default function DashboardLayout({
     return pathname.startsWith(path);
   };
 
-  // Resolve path title for the header
   const getHeaderTitle = () => {
     switch (pathname) {
       case '/dashboard':
@@ -78,16 +76,14 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden relative font-sans">
-      {/* Background gradients for dashboard glow */}
+      {/* Background gradients */}
       <div className="absolute top-[-10%] left-[-10%] w-[35vw] h-[35vw] rounded-full bg-blue-600/5 blur-[100px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[35vw] h-[35vw] rounded-full bg-purple-600/5 blur-[100px] pointer-events-none" />
 
-      {/* Headless Client Sync component */}
       <SyncUser />
 
-      {/* Sidebar navigation */}
+      {/* Sidebar */}
       <aside className="w-64 border-r border-slate-900 bg-slate-950/70 backdrop-blur-xl flex flex-col z-20">
-        {/* Sidebar Brand Header */}
         <div className="h-16 border-b border-slate-900 flex items-center px-6 gap-2">
           <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -97,7 +93,6 @@ export default function DashboardLayout({
           </span>
         </div>
 
-        {/* Sidebar Links */}
         <nav className="flex-1 px-4 py-6 space-y-1.5">
           {navItems.map((item) => {
             const active = isActive(item.path);
@@ -111,7 +106,6 @@ export default function DashboardLayout({
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30 border border-transparent'
                 }`}
               >
-                {/* Visual active indicator bar */}
                 {active && (
                   <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-gradient-to-b from-blue-400 to-purple-500 rounded-r-md" />
                 )}
@@ -124,7 +118,6 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        {/* Sidebar Footer */}
         <div className="p-4 border-t border-slate-900 bg-slate-950/40">
           <div className="flex items-center justify-between px-2 text-xs text-slate-500">
             <span>Client v1.0.0</span>
@@ -136,9 +129,9 @@ export default function DashboardLayout({
         </div>
       </aside>
 
-      {/* Main workspace section */}
+      {/* Main Workspace */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Header */}
+        {/* Header */}
         <header className="h-16 border-b border-slate-900 bg-slate-950/50 backdrop-blur-md flex items-center justify-between px-8 z-10">
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 font-mono">dashboard</span>
@@ -149,13 +142,11 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Quick API check display */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/50 border border-slate-800 text-[11px] text-slate-400">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
               API Server Live
             </div>
             
-            {/* Clerk User Button */}
             <UserButton 
               appearance={{
                 baseTheme: dark,
@@ -167,7 +158,6 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* Main Content scrollable container */}
         <main className="flex-1 overflow-y-auto p-8 bg-slate-950 relative">
           {children}
         </main>

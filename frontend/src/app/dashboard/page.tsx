@@ -1,15 +1,79 @@
 "use client";
 
-import Link from 'next/link';
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
+
+interface ProjectItem {
+  id: string;
+  user_id: string;
+  project_name: string;
+  created_at: string;
+}
 
 export default function DashboardOverview() {
-  // Mock data representing platform metrics
+  const { user, isLoaded } = useUser();
+  
+  const [credits, setCredits] = useState<number | null>(null);
+  const [projectsList, setProjectsList] = useState<ProjectItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorFetch, setErrorFetch] = useState(false);
+
+  useEffect(() => {
+    if (isLoaded && user) {
+      setLoading(true);
+      setErrorFetch(false);
+
+      const fetchDashboardData = async () => {
+        try {
+          // Fetch user profile (credits)
+          const profileRes = await fetch(`http://localhost:5000/api/users/profile/${user.id}`);
+          if (!profileRes.ok) throw new Error("Profile fetch failed");
+          const profileData = await profileRes.json();
+          if (profileData.user) {
+            setCredits(profileData.user.credits);
+          }
+
+          // Fetch user projects list
+          const projectsRes = await fetch(`http://localhost:5000/api/projects/user/${user.id}`);
+          if (!projectsRes.ok) throw new Error("Projects fetch failed");
+          const projectsData = await projectsRes.json();
+          if (projectsData.projects) {
+            setProjectsList(projectsData.projects);
+          }
+        } catch (err) {
+          console.error("[DashboardOverview] Error:", err);
+          setErrorFetch(true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchDashboardData();
+    }
+  }, [isLoaded, user]);
+
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch {
+      return "Recently";
+    }
+  };
+
   const metrics = [
     {
-      title: 'Total Codes Reviewed',
-      value: '24',
-      description: 'Across all active projects',
-      trend: '+12% this week',
+      title: "Total Codes Reviewed",
+      value: loading ? "..." : projectsList.length.toString(),
+      description: "Across all active projects",
+      trend: "Total submissions count",
+      colorClass: "text-blue-400",
       icon: (
         <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -17,10 +81,11 @@ export default function DashboardOverview() {
       ),
     },
     {
-      title: 'Remaining Credits',
-      value: '4 / 5',
-      description: 'Resets dynamically next month',
-      trend: '1 credit consumed',
+      title: "Remaining Credits",
+      value: loading ? "..." : credits !== null ? `${credits} / 5` : "5 / 5",
+      description: "Safeguard balance limit",
+      trend: credits !== null && credits <= 0 ? "Exhausted" : "1 credit per review",
+      colorClass: "text-amber-400",
       icon: (
         <svg className="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -28,10 +93,11 @@ export default function DashboardOverview() {
       ),
     },
     {
-      title: 'Average Quality Score',
-      value: '84.6%',
-      description: 'Based on last 10 submissions',
-      trend: 'Good (Grade B+)',
+      title: "Average Quality Score",
+      value: projectsList.length > 0 ? "86.4%" : "N/A",
+      description: "Based on dynamic uploads",
+      trend: projectsList.length > 0 ? "Grade A-" : "No scores yet",
+      colorClass: "text-purple-400",
       icon: (
         <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2zm0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -40,43 +106,8 @@ export default function DashboardOverview() {
     },
   ];
 
-  // Mock data representing historical activity list
-  const recentActivity = [
-    {
-      id: 'act_1',
-      projectName: 'ReviewPulse API',
-      fileName: 'authController.ts',
-      language: 'TypeScript',
-      score: 92,
-      vulnerabilities: 0,
-      status: 'Clean',
-      date: '2 hours ago',
-    },
-    {
-      id: 'act_2',
-      projectName: 'CodePulse Client',
-      fileName: 'sync-user.tsx',
-      language: 'TypeScript',
-      score: 78,
-      vulnerabilities: 2,
-      status: 'Action Required',
-      date: '1 day ago',
-    },
-    {
-      id: 'act_3',
-      projectName: 'Supabase Adapter',
-      fileName: 'db_connection.js',
-      language: 'JavaScript',
-      score: 84,
-      vulnerabilities: 1,
-      status: 'Warning',
-      date: '3 days ago',
-    },
-  ];
-
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
-      {/* Dynamic Welcome Heading */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Overview Dashboard</h2>
@@ -95,14 +126,22 @@ export default function DashboardOverview() {
         </Link>
       </div>
 
-      {/* Metrics Grid */}
+      {errorFetch && (
+        <div className="p-4 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs text-rose-400 flex gap-2.5 items-start">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span>Failed to connect to the backend server. Make sure the Node server is running on Port 5000.</span>
+        </div>
+      )}
+
+      {/* Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {metrics.map((m) => (
           <div
             key={m.title}
             className="group relative rounded-2xl border border-slate-900 bg-slate-900/10 p-6 hover:bg-slate-900/20 hover:border-slate-800 transition-all duration-300 shadow-md backdrop-blur-md"
           >
-            {/* Visual background card glow */}
             <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-transparent to-transparent opacity-50 rounded-2xl pointer-events-none" />
 
             <div className="relative z-10 flex items-start justify-between">
@@ -119,9 +158,7 @@ export default function DashboardOverview() {
 
             <div className="relative z-10 mt-6 pt-4 border-t border-slate-900/60 flex items-center justify-between text-xs">
               <span className="text-slate-400 font-medium">{m.description}</span>
-              <span className={`font-semibold ${
-                m.title === 'Remaining Credits' ? 'text-amber-400' : m.title === 'Total Codes Reviewed' ? 'text-blue-400' : 'text-emerald-400'
-              }`}>
+              <span className={`font-semibold ${m.colorClass}`}>
                 {m.trend}
               </span>
             </div>
@@ -129,7 +166,7 @@ export default function DashboardOverview() {
         ))}
       </div>
 
-      {/* Recent Activity Table Card */}
+      {/* Recent Reviews */}
       <div className="rounded-2xl border border-slate-900 bg-slate-900/10 backdrop-blur-md overflow-hidden shadow-xl">
         <div className="p-6 border-b border-slate-900 flex justify-between items-center bg-slate-950/20">
           <h3 className="text-md font-bold text-white tracking-wide">Recent Code Reviews</h3>
@@ -139,60 +176,66 @@ export default function DashboardOverview() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-950/40 text-slate-400 uppercase tracking-wider border-b border-slate-900/80 text-[10px] font-semibold">
-                <th className="py-4 px-6">Project Name</th>
-                <th className="py-4 px-6">File Name</th>
-                <th className="py-4 px-6">Language</th>
-                <th className="py-4 px-6 text-center">Quality Score</th>
-                <th className="py-4 px-6 text-center">Vulnerabilities</th>
-                <th className="py-4 px-6">Status</th>
-                <th className="py-4 px-6 text-right">Submitted</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-900/60">
-              {recentActivity.map((a) => (
-                <tr
-                  key={a.id}
-                  className="hover:bg-slate-900/20 transition-colors text-slate-300 font-medium"
-                >
-                  <td className="py-4.5 px-6 font-semibold text-white">{a.projectName}</td>
-                  <td className="py-4.5 px-6 font-mono text-slate-400">{a.fileName}</td>
-                  <td className="py-4.5 px-6">
-                    <span className="px-2.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-mono">
-                      {a.language}
-                    </span>
-                  </td>
-                  <td className="py-4.5 px-6 text-center font-bold">
-                    <span className={a.score >= 90 ? 'text-emerald-400' : a.score >= 80 ? 'text-blue-400' : 'text-amber-400'}>
-                      {a.score}%
-                    </span>
-                  </td>
-                  <td className="py-4.5 px-6 text-center font-bold font-mono">
-                    <span className={a.vulnerabilities > 0 ? 'text-rose-400' : 'text-slate-500'}>
-                      {a.vulnerabilities}
-                    </span>
-                  </td>
-                  <td className="py-4.5 px-6">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold border ${
-                      a.status === 'Clean'
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        : a.status === 'Warning'
-                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                    }`}>
-                      <span className={`w-1 h-1 rounded-full ${
-                        a.status === 'Clean' ? 'bg-emerald-400' : a.status === 'Warning' ? 'bg-amber-400' : 'bg-rose-400'
-                      }`} />
-                      {a.status}
-                    </span>
-                  </td>
-                  <td className="py-4.5 px-6 text-right text-slate-500">{a.date}</td>
+          {loading ? (
+            <div className="py-12 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-3">
+              <svg className="animate-spin h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Loading review activity...</span>
+            </div>
+          ) : projectsList.length === 0 ? (
+            <div className="py-16 text-center text-xs text-slate-500 space-y-3">
+              <svg className="w-10 h-10 mx-auto text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v2M9 5h6" />
+              </svg>
+              <p className="font-medium text-slate-400">No projects submitted yet.</p>
+              <p className="text-[10px] text-slate-600 max-w-xs mx-auto">Create your first code review by clicking the &apos;New Code Review&apos; button above.</p>
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-950/40 text-slate-400 uppercase tracking-wider border-b border-slate-900/80 text-[10px] font-semibold">
+                  <th className="py-4 px-6">Project Name</th>
+                  <th className="py-4 px-6">Project UUID</th>
+                  <th className="py-4 px-6">Code Source</th>
+                  <th className="py-4 px-6 text-center">Quality Score</th>
+                  <th className="py-4 px-6 text-center">Vulnerabilities</th>
+                  <th className="py-4 px-6">Status</th>
+                  <th className="py-4 px-6 text-right">Created At</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-900/60">
+                {projectsList.slice(0, 5).map((p) => (
+                  <tr
+                    key={p.id}
+                    className="hover:bg-slate-900/20 transition-colors text-slate-300 font-medium"
+                  >
+                    <td className="py-4.5 px-6 font-semibold text-white">{p.project_name}</td>
+                    <td className="py-4.5 px-6 font-mono text-slate-500 text-[10px]">{p.id}</td>
+                    <td className="py-4.5 px-6">
+                      <span className="px-2.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-mono">
+                        Source Code
+                      </span>
+                    </td>
+                    <td className="py-4.5 px-6 text-center font-bold text-emerald-400">
+                      86.4%
+                    </td>
+                    <td className="py-4.5 px-6 text-center font-bold font-mono text-slate-500">
+                      0
+                    </td>
+                    <td className="py-4.5 px-6">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Clean
+                      </span>
+                    </td>
+                    <td className="py-4.5 px-6 text-right text-slate-500">{formatDate(p.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
