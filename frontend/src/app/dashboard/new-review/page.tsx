@@ -2,9 +2,11 @@
 
 import { useState, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 export default function NewReviewPage() {
   const { userId } = useAuth();
+  const router = useRouter();
   
   // Form State
   const [projectName, setProjectName] = useState("");
@@ -122,6 +124,7 @@ export default function NewReviewPage() {
     // Submit payload to Express Backend
     try {
       setLoading(true);
+      console.log("✈️ FRONTEND SENDING PAYLOAD:", { user_id: userId, project_name: projectName.trim(), code_content: finalCodeContent });
       const res = await fetch("http://localhost:5000/api/projects", {
         method: "POST",
         headers: {
@@ -134,6 +137,7 @@ export default function NewReviewPage() {
         }),
       });
 
+      console.log("📩 FRONTEND RECEIVED RESPONSE STATUS:", res.status);
       const data = await res.json();
 
       if (!res.ok) {
@@ -148,7 +152,12 @@ export default function NewReviewPage() {
       setCodeContent("");
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
+
+      // Push state and redirect to dashboard to refresh submissions tracker
+      router.push('/dashboard');
+      router.refresh();
     } catch (err: any) {
+      console.error("❌ FRONTEND NETWORK LAYER FAILURE:", err);
       setErrorMsg(err.message || "An unexpected network error occurred.");
     } finally {
       setLoading(false);

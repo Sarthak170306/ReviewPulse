@@ -9,6 +9,8 @@ interface ProjectItem {
   user_id: string;
   project_name: string;
   created_at: string;
+  overall_score?: number | null;
+  vulnerability_count?: number | null;
 }
 
 export default function DashboardOverview() {
@@ -67,12 +69,28 @@ export default function DashboardOverview() {
     }
   };
 
+  // Compute dynamic metrics
+  const totalProjects = projectsList.length;
+
+  const projectsWithScore = projectsList.filter(
+    (p) => p.overall_score !== null && p.overall_score !== undefined
+  );
+  
+  const averageScore = projectsWithScore.length > 0
+    ? Math.round(projectsWithScore.reduce((sum, p) => sum + Number(p.overall_score), 0) / projectsWithScore.length)
+    : 100;
+
+  const totalVulnerabilities = projectsList.reduce(
+    (sum, p) => sum + Number(p.vulnerability_count || 0), 
+    0
+  );
+
   const metrics = [
     {
-      title: "Total Codes Reviewed",
-      value: loading ? "..." : projectsList.length.toString(),
-      description: "Across all active projects",
-      trend: "Total submissions count",
+      title: "Total Projects",
+      value: loading ? "..." : totalProjects.toString(),
+      description: "Across all active uploads",
+      trend: "Lifetime count",
       colorClass: "text-blue-400",
       icon: (
         <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -82,7 +100,7 @@ export default function DashboardOverview() {
     },
     {
       title: "Remaining Credits",
-      value: loading ? "..." : credits !== null ? `${credits} / 5` : "5 / 5",
+      value: loading ? "..." : credits !== null ? `${credits} / 150` : "150 / 150",
       description: "Safeguard balance limit",
       trend: credits !== null && credits <= 0 ? "Exhausted" : "1 credit per review",
       colorClass: "text-amber-400",
@@ -94,13 +112,25 @@ export default function DashboardOverview() {
     },
     {
       title: "Average Quality Score",
-      value: projectsList.length > 0 ? "86.4%" : "N/A",
-      description: "Based on dynamic uploads",
-      trend: projectsList.length > 0 ? "Grade A-" : "No scores yet",
+      value: loading ? "..." : `${averageScore}%`,
+      description: `Based on ${projectsWithScore.length} review(s)`,
+      trend: projectsWithScore.length > 0 ? (averageScore >= 90 ? "Grade A" : averageScore >= 80 ? "Grade B" : "Grade C") : "No scores yet",
       colorClass: "text-purple-400",
       icon: (
         <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2zm0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      title: "Total Vulnerabilities",
+      value: loading ? "..." : totalVulnerabilities.toString(),
+      description: "Static security checks",
+      trend: totalVulnerabilities > 0 ? "Action required" : "All clean",
+      colorClass: "text-rose-400",
+      icon: (
+        <svg className="w-6 h-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
       ),
     },
@@ -136,7 +166,7 @@ export default function DashboardOverview() {
       )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {metrics.map((m) => (
           <div
             key={m.title}
@@ -218,18 +248,34 @@ export default function DashboardOverview() {
                         Source Code
                       </span>
                     </td>
-                    <td className="py-4.5 px-6 text-center font-bold text-emerald-400">
-                      86.4%
-                    </td>
-                    <td className="py-4.5 px-6 text-center font-bold font-mono text-slate-500">
-                      0
-                    </td>
-                    <td className="py-4.5 px-6">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        Clean
-                      </span>
-                    </td>
+                    <td className="py-4.5 px-6 text-center font-bold">
+                       <span className={p.overall_score !== null && p.overall_score !== undefined ? (p.overall_score >= 90 ? 'text-emerald-400' : p.overall_score >= 80 ? 'text-blue-400' : 'text-amber-400') : 'text-slate-500'}>
+                         {p.overall_score !== null && p.overall_score !== undefined ? `${p.overall_score}%` : 'Pending'}
+                       </span>
+                     </td>
+                     <td className="py-4.5 px-6 text-center font-bold font-mono">
+                       <span className={p.vulnerability_count && p.vulnerability_count > 0 ? 'text-rose-400' : 'text-slate-500'}>
+                         {p.vulnerability_count !== null && p.vulnerability_count !== undefined ? p.vulnerability_count : 0}
+                       </span>
+                     </td>
+                     <td className="py-4.5 px-6">
+                       {p.overall_score === null || p.overall_score === undefined ? (
+                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold border bg-slate-500/10 text-slate-400 border-slate-500/20">
+                           <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                           Staged
+                         </span>
+                       ) : p.vulnerability_count && p.vulnerability_count > 0 ? (
+                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold border bg-rose-500/10 text-rose-400 border-rose-500/20">
+                           <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                           Action Required
+                         </span>
+                       ) : (
+                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                           Clean
+                         </span>
+                       )}
+                     </td>
                     <td className="py-4.5 px-6 text-right text-slate-500">{formatDate(p.created_at)}</td>
                   </tr>
                 ))}
