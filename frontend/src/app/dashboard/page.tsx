@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 interface ProjectItem {
   id: string;
@@ -15,6 +16,7 @@ interface ProjectItem {
 
 export default function DashboardOverview() {
   const { user, isLoaded } = useUser();
+  const router = useRouter();
   
   const [credits, setCredits] = useState<number | null>(null);
   const [projectsList, setProjectsList] = useState<ProjectItem[]>([]);
@@ -239,7 +241,8 @@ export default function DashboardOverview() {
                 {projectsList.slice(0, 5).map((p) => (
                   <tr
                     key={p.id}
-                    className="hover:bg-slate-900/20 transition-colors text-slate-300 font-medium"
+                    onClick={() => router.push(`/dashboard/project/${p.id}`)}
+                    className="cursor-pointer hover:bg-slate-800/40 transition-colors text-slate-300 font-medium"
                   >
                     <td className="py-4.5 px-6 font-semibold text-white">{p.project_name}</td>
                     <td className="py-4.5 px-6 font-mono text-slate-500 text-[10px]">{p.id}</td>

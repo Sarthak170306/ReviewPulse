@@ -41,21 +41,14 @@ async function createProject(req, res) {
     }
 
     // 1. Insert project
-    const projectInsertQuery = 'INSERT INTO projects (user_id, project_name) VALUES ($1, $2) RETURNING *';
-    const projectResult = await client.query(projectInsertQuery, [user_id.trim(), project_name.trim()]);
+    const projectInsertQuery = 'INSERT INTO projects (user_id, project_name, code_content) VALUES ($1, $2, $3) RETURNING *';
+    const projectResult = await client.query(projectInsertQuery, [user_id.trim(), project_name.trim(), code_content]);
     const project = projectResult.rows[0];
 
     // 2. Run static analysis
-    const findings = analyzerService.analyzeCode(code_content, language) || [];
-
-    // Calculate score (High: -20, Medium: -10, Low: -5, Min: 10)
-    let score = 100;
-    findings.forEach(f => {
-      if (f.severity === 'High') score -= 20;
-      else if (f.severity === 'Medium') score -= 10;
-      else if (f.severity === 'Low') score -= 5;
-    });
-    if (score < 10) score = 10;
+    const analysisResult = analyzerService.analyzeCode(code_content, language);
+    const findings = analysisResult.findings || [];
+    const score = analysisResult.overall_score !== undefined ? analysisResult.overall_score : 100;
 
     const summary = `Static analysis complete. Found ${findings.length} issue(s). Quality score: ${score}/100.`;
 
@@ -147,7 +140,62 @@ async function getProjectsByUser(req, res) {
   }
 }
 
+// Get specific project report by UUID including reviews and findings
+async function getProjectReport(req, res) {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ error: 'URL parameter "id" is required.' });
+  }
+
+  try {
+    const projectQuery = 'SELECT id, user_id, project_name, code_content, created_at FROM projects WHERE id = $1';
+    const projectRes = await pool.query(projectQuery, [id]);
+    
+    if (projectRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Project not found.' });
+    }
+    const project = projectRes.rows[0];
+
+    const reviewQuery = `
+      SELECT id, review_type, overall_score, summary, created_at 
+      FROM reviews 
+      WHERE project_id = $1 
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    const reviewRes = await pool.query(reviewQuery, [id]);
+    const review = reviewRes.rows[0] || null;
+
+    let findingsArray = [];
+    if (review) {
+      const findingsQuery = `
+        SELECT id, severity, issue, explanation, suggested_fix, file_name, line_number 
+        FROM review_findings 
+        WHERE review_id = $1 
+        ORDER BY line_number ASC
+      `;
+      const findingsRes = await pool.query(findingsQuery, [review.id]);
+      findingsArray = findingsRes.rows;
+    }
+
+    res.status(200).json({
+      success: true,
+      project: {
+        id: project.id,
+        project_name: project.project_name,
+        code_content: project.code_content || '',
+        overall_score: review ? review.overall_score : 100
+      },
+      findings: findingsArray
+    });
+  } catch (err) {
+    console.error('[ProjectController] Get report error:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
 module.exports = {
   createProject,
-  getProjectsByUser
+  getProjectsByUser,
+  getProjectReport
 };
