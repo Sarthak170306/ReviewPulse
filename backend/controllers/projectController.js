@@ -178,6 +178,16 @@ async function getProjectReport(req, res) {
       findingsArray = findingsRes.rows;
     }
 
+    // Query collaborators
+    const collaboratorsQuery = 'SELECT id, project_id, user_email, role, created_at FROM project_collaborators WHERE project_id = $1 ORDER BY created_at ASC';
+    const collaboratorsRes = await pool.query(collaboratorsQuery, [id]);
+    const collaboratorsArray = collaboratorsRes.rows;
+
+    // Query activity logs
+    const activityQuery = 'SELECT id, project_id, user_name, action, created_at FROM activity_logs WHERE project_id = $1 ORDER BY created_at DESC';
+    const activityRes = await pool.query(activityQuery, [id]);
+    const activityLogsArray = activityRes.rows;
+
     res.status(200).json({
       success: true,
       project: {
@@ -186,7 +196,9 @@ async function getProjectReport(req, res) {
         code_content: project.code_content || '',
         overall_score: review ? review.overall_score : 100
       },
-      findings: findingsArray
+      findings: findingsArray,
+      collaborators: collaboratorsArray,
+      activityLogs: activityLogsArray
     });
   } catch (err) {
     console.error('[ProjectController] Get report error:', err.message);
@@ -194,8 +206,83 @@ async function getProjectReport(req, res) {
   }
 }
 
+// Share a project audit with a collaborator
+async function shareProject(req, res) {
+  const { id } = req.params;
+  const { email, role, userName } = req.body;
+
+  if (!id || !email || !role || !userName) {
+    return res.status(400).json({ error: 'Parameters "id", "email", "role", and "userName" are required.' });
+  }
+
+  try {
+    const projectCheck = 'SELECT id FROM projects WHERE id = $1';
+    const projectRes = await pool.query(projectCheck, [id]);
+    if (projectRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Project not found.' });
+    }
+
+    const insertCollaboratorQuery = `
+      INSERT INTO project_collaborators (project_id, user_email, role)
+      VALUES ($1, $2, $3)
+      RETURNING *
+    `;
+    const collaboratorRes = await pool.query(insertCollaboratorQuery, [id, email.trim(), role]);
+
+    const action = `${userName} shared this project with ${email.trim()} as ${role}`;
+    const insertLogQuery = `
+      INSERT INTO activity_logs (project_id, user_name, action)
+      VALUES ($1, $2, $3)
+    `;
+    await pool.query(insertLogQuery, [id, userName, action]);
+
+    res.status(200).json({
+      success: true,
+      collaborator: collaboratorRes.rows[0]
+    });
+  } catch (err) {
+    console.error('[ProjectController] Share project error:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// Log general project activities
+async function logProjectActivity(req, res) {
+  const { id } = req.params;
+  const { userName, action } = req.body;
+
+  if (!id || !userName || !action) {
+    return res.status(400).json({ error: 'Parameters "id", "userName", and "action" are required.' });
+  }
+
+  try {
+    const projectCheck = 'SELECT id FROM projects WHERE id = $1';
+    const projectRes = await pool.query(projectCheck, [id]);
+    if (projectRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Project not found.' });
+    }
+
+    const insertLogQuery = `
+      INSERT INTO activity_logs (project_id, user_name, action)
+      VALUES ($1, $2, $3)
+      RETURNING *
+    `;
+    const logRes = await pool.query(insertLogQuery, [id, userName, action]);
+
+    res.status(200).json({
+      success: true,
+      log: logRes.rows[0]
+    });
+  } catch (err) {
+    console.error('[ProjectController] Log activity error:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
 module.exports = {
   createProject,
   getProjectsByUser,
-  getProjectReport
+  getProjectReport,
+  shareProject,
+  logProjectActivity
 };

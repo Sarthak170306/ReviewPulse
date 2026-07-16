@@ -11,4 +11,10 @@ router.get('/user/:userId', projectController.getProjectsByUser);
 // GET /api/projects/:id/report
 router.get('/:id/report', projectController.getProjectReport);
 
+// POST /api/projects/:id/share
+router.post('/:id/share', projectController.shareProject);
+
+// POST /api/projects/:id/log
+router.post('/:id/log', projectController.logProjectActivity);
+
 module.exports = router;

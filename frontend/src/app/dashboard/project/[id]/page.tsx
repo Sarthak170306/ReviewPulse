@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 
 interface Finding {
   id: string;
@@ -20,57 +21,143 @@ interface ProjectMetadata {
   overall_score: number;
 }
 
+interface Collaborator {
+  id: string;
+  project_id: string;
+  user_email: string;
+  role: "Viewer" | "Editor" | string;
+  created_at: string;
+}
+
+interface ActivityLog {
+  id: string;
+  project_id: string;
+  user_name: string;
+  action: string;
+  created_at: string;
+}
+
 interface ReportResponse {
   success: boolean;
   project: ProjectMetadata;
   findings: Finding[];
+  collaborators: Collaborator[];
+  activityLogs: ActivityLog[];
 }
 
 export default function ProjectReportPage() {
   const router = useRouter();
   const { id } = useParams();
+  const { user } = useUser();
 
   const [projectData, setProjectData] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorFetch, setErrorFetch] = useState<string | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
 
-  useEffect(() => {
-    if (!id) return;
+  // Share modal state
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareRole, setShareRole] = useState<"Viewer" | "Editor">("Viewer");
+  const [isSharingSubmit, setIsSharingSubmit] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
-    const fetchReport = async () => {
-      try {
-        setLoading(true);
-        setErrorFetch(null);
-        
-        const res = await fetch(`http://localhost:5000/api/projects/${id}/report`);
-        if (!res.ok) {
-          if (res.status === 404) {
-            throw new Error("Report not found in Supabase database.");
-          }
-          throw new Error("Failed to load review report data.");
+  const fetchReport = async () => {
+    try {
+      setLoading(true);
+      setErrorFetch(null);
+      
+      const res = await fetch(`http://localhost:5000/api/projects/${id}/report`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error("Report not found in Supabase database.");
         }
-        
-        const resData = await res.json();
-        console.log("🔥 FULL BACKEND DATA OBJECT RECEIVED:", resData);
-        setProjectData(resData);
-
-        // Pre-select first finding if available
-        if (resData.findings && resData.findings.length > 0) {
-          setSelectedFinding(resData.findings[0]);
-        }
-      } catch (err: any) {
-        console.error("[ProjectReport] Fetch failed:", err);
-        setErrorFetch(err.message || "An unexpected network error occurred.");
-      } finally {
-        setLoading(false);
+        throw new Error("Failed to load review report data.");
       }
-    };
+      
+      const resData = await res.json();
+      console.log("🔥 FULL BACKEND DATA OBJECT RECEIVED:", resData);
+      setProjectData(resData);
 
-    fetchReport();
+      // Pre-select first finding if available
+      if (resData.findings && resData.findings.length > 0) {
+        setSelectedFinding(resData.findings[0]);
+      }
+    } catch (err: any) {
+      console.error("[ProjectReport] Fetch failed:", err);
+      setErrorFetch(err.message || "An unexpected network error occurred.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) {
+      fetchReport();
+    }
   }, [id]);
 
-  if (loading) {
+  const handleShareSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shareEmail.trim()) return;
+
+    try {
+      setIsSharingSubmit(true);
+      setShareError(null);
+
+      const activeUser = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Anonymous";
+      
+      const res = await fetch(`http://localhost:5000/api/projects/${id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: shareEmail.trim(),
+          role: shareRole,
+          userName: activeUser
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to share project audit with collaborator.");
+      }
+
+      // Success
+      setShareEmail("");
+      setIsShareModalOpen(false);
+      
+      // Reload details to sync timeline and list
+      fetchReport();
+    } catch (err: any) {
+      console.error("[ProjectReport] Share error:", err);
+      setShareError(err.message || "Failed to share project.");
+    } finally {
+      setIsSharingSubmit(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    window.print();
+
+    // Log PDF export activity in background
+    try {
+      const activeUser = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Anonymous";
+      await fetch(`http://localhost:5000/api/projects/${id}/log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userName: activeUser,
+          action: "Report exported as PDF"
+        })
+      });
+
+      // Reload to update timeline
+      fetchReport();
+    } catch (err) {
+      console.error("[ProjectReport] Background log activity failed:", err);
+    }
+  };
+
+  if (loading && !projectData) {
     return (
       <div className="py-24 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-3">
         <svg className="animate-spin h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24">
@@ -98,7 +185,7 @@ export default function ProjectReportPage() {
     );
   }
 
-  const { project, findings } = projectData;
+  const { project, findings, collaborators, activityLogs } = projectData;
   const rawCode = project?.code_content || "";
 
   // Dynamic severity count calculations
@@ -154,10 +241,22 @@ export default function ProjectReportPage() {
             <p className="text-xs text-slate-400 font-mono">UUID: {id}</p>
           </div>
 
-          {/* Dynamic telemetry stats & Export CTA */}
+          {/* Dynamic telemetry stats & Export/Share CTAs */}
           <div className="flex items-center gap-4 flex-wrap">
+            {/* Share Audit CTA */}
             <button
-              onClick={() => window.print()}
+              onClick={() => setIsShareModalOpen(true)}
+              className="px-4 py-2 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-white hover:bg-slate-800/80 transition-all backdrop-blur-md shadow-lg flex items-center gap-2 group cursor-pointer"
+            >
+              <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 10.742l4.828-2.414m0 0a3 3 0 10-3.62-1.09l-4.829 2.414m4.829 2.414a3 3 0 11-3.62 1.09l-4.828-2.414m4.828 2.414a3 3 0 103.62-1.09" />
+              </svg>
+              <span>Share Audit</span>
+            </button>
+
+            {/* Export Audit Report CTA */}
+            <button
+              onClick={handleExportPDF}
               className="px-4 py-2 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-white hover:bg-slate-800/80 transition-all backdrop-blur-md shadow-lg flex items-center gap-2 group cursor-pointer"
             >
               <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -307,9 +406,122 @@ export default function ProjectReportPage() {
             </div>
           </div>
         </div>
+
+        {/* 3. TIMELINE-BASED ACTIVITY TRAIL COMPONENT */}
+        <div className="border-t border-slate-900/60 pt-8 mt-8">
+          <div className="flex items-center gap-2 mb-6">
+            <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            <h3 className="text-sm font-bold text-white tracking-wider uppercase">Audit Activity Trail</h3>
+          </div>
+
+          <div className="relative pl-6 border-l border-slate-800/80 space-y-6">
+            {activityLogs && activityLogs.length > 0 ? (
+              activityLogs.map((log) => (
+                <div key={log.id} className="relative group">
+                  {/* Timeline bullet dot */}
+                  <span className="absolute -left-[30px] top-1 w-3 h-3 rounded-full bg-blue-500 ring-4 ring-[#030712] transition-colors group-hover:bg-purple-500" />
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-300 font-medium">
+                      {log.action}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                      <span className="font-semibold text-slate-400">{log.user_name}</span>
+                      <span>&bull;</span>
+                      <span>{new Date(log.created_at).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-slate-500 italic">No activity logs recorded yet.</p>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* 2. PRINT-OPTIMIZED DOCUMENT TEMPLATE (Visible ONLY during print compile layout compilation) */}
+      {/* 4. SHARE COLLABORATOR MODAL POPUP */}
+      {isShareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm print:hidden">
+          <div className="bg-[#090d16] border border-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl relative space-y-4 animate-fade-in">
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setIsShareModalOpen(false);
+                setShareError(null);
+              }}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white cursor-pointer select-none"
+              title="Close modal"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="space-y-1.5">
+              <h3 className="text-md font-bold text-white">Share Audit Project</h3>
+              <p className="text-xs text-slate-400">Invite collaborators to view or inspect code review violations.</p>
+            </div>
+
+            {shareError && (
+              <div className="p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs text-rose-400">
+                {shareError}
+              </div>
+            )}
+
+            <form onSubmit={handleShareSubmit} className="space-y-4">
+              {/* Email Input */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Collaborator Email</label>
+                <input
+                  type="email"
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  placeholder="collaborator@company.com"
+                  required
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Role Select */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Role Permission</label>
+                <select
+                  value={shareRole}
+                  onChange={(e) => setShareRole(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="Viewer">Viewer (Read Only)</option>
+                  <option value="Editor">Editor (Full Access)</option>
+                </select>
+              </div>
+
+              {/* Submit trigger button */}
+              <button
+                type="submit"
+                disabled={isSharingSubmit}
+                className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-xs font-bold text-white rounded-xl transition-all shadow-lg cursor-pointer flex justify-center items-center gap-2 disabled:opacity-50"
+              >
+                {isSharingSubmit ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Inviting...</span>
+                  </>
+                ) : (
+                  <span>Send Invitation</span>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. PRINT-OPTIMIZED DOCUMENT TEMPLATE (Visible ONLY during print layout compilation) */}
       <div className="hidden print:block bg-white text-black p-8 font-sans space-y-8 select-text w-full max-w-4xl mx-auto">
         {/* Document Header */}
         <div className="border-b-2 border-slate-900 pb-6 flex justify-between items-start">

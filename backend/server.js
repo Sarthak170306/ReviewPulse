@@ -22,11 +22,35 @@ async function checkDatabaseConnection() {
     dbConnected = true;
     dbErrorMsg = null;
     console.log(`[Database] Connected successfully to Supabase PostgreSQL at ${res.rows[0].now}`);
+
+    // Create project_collaborators table if not exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS project_collaborators (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        user_email TEXT NOT NULL,
+        role TEXT CHECK (role IN ('Viewer', 'Editor')) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create activity_logs table if not exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        user_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log('[Database] Collaborators and Activity tables initialized successfully');
     client.release();
   } catch (err) {
     dbConnected = false;
     dbErrorMsg = err.message;
-    console.error('[Database] Connection failed:', err.message);
+    console.error('[Database] Connection or table setup failed:', err.message);
   }
 }
 
