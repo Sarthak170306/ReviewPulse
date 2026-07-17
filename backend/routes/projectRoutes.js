@@ -17,4 +17,7 @@ router.post('/:id/share', projectController.shareProject);
 // POST /api/projects/:id/log
 router.post('/:id/log', projectController.logProjectActivity);
 
+// POST /api/projects/:id/webhook
+router.post('/:id/webhook', projectController.updateWebhook);
+
 module.exports = router;

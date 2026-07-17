@@ -18,6 +18,7 @@ interface ProjectMetadata {
   id: string;
   project_name: string;
   code_content: string;
+  webhook_url?: string;
   overall_score: number;
 }
 
@@ -62,6 +63,13 @@ export default function ProjectReportPage() {
   const [isSharingSubmit, setIsSharingSubmit] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
 
+  // Webhook modal state
+  const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [isWebhookSubmit, setIsWebhookSubmit] = useState(false);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [webhookSuccess, setWebhookSuccess] = useState(false);
+
   const fetchReport = async () => {
     try {
       setLoading(true);
@@ -78,6 +86,10 @@ export default function ProjectReportPage() {
       const resData = await res.json();
       console.log("🔥 FULL BACKEND DATA OBJECT RECEIVED:", resData);
       setProjectData(resData);
+      
+      if (resData.project && resData.project.webhook_url) {
+        setWebhookUrl(resData.project.webhook_url);
+      }
 
       // Pre-select first finding if available
       if (resData.findings && resData.findings.length > 0) {
@@ -118,20 +130,52 @@ export default function ProjectReportPage() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to share project audit with collaborator.");
+        throw new Error("Failed to share project audit.");
       }
 
-      // Success
       setShareEmail("");
       setIsShareModalOpen(false);
-      
-      // Reload details to sync timeline and list
       fetchReport();
     } catch (err: any) {
       console.error("[ProjectReport] Share error:", err);
       setShareError(err.message || "Failed to share project.");
     } finally {
       setIsSharingSubmit(false);
+    }
+  };
+
+  const handleWebhookSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      setIsWebhookSubmit(true);
+      setWebhookError(null);
+      setWebhookSuccess(false);
+
+      const res = await fetch(`http://localhost:5000/api/projects/${id}/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: webhookUrl.trim() || null
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to configure webhook endpoint.");
+      }
+
+      setWebhookSuccess(true);
+      setTimeout(() => {
+        setIsWebhookModalOpen(false);
+        setWebhookSuccess(false);
+      }, 1500);
+
+      fetchReport();
+    } catch (err: any) {
+      console.error("[ProjectReport] Webhook setup error:", err);
+      setWebhookError(err.message || "Failed to save webhook configuration.");
+    } finally {
+      setIsWebhookSubmit(false);
     }
   };
 
@@ -150,11 +194,61 @@ export default function ProjectReportPage() {
         })
       });
 
-      // Reload to update timeline
       fetchReport();
     } catch (err) {
       console.error("[ProjectReport] Background log activity failed:", err);
     }
+  };
+
+  // Reconstruct standard unified Git Remediation Diff Patch structure
+  const generateGitPatch = (code: string, activeFindings: Finding[]) => {
+    if (!code) return "";
+
+    const lines = code.split("\n");
+    const linesCount = lines.length;
+
+    // Group findings by line number for fast search
+    const patchFindings = activeFindings.reduce<Record<number, Finding>>((acc, f) => {
+      acc[f.line_number] = f;
+      return acc;
+    }, {});
+
+    let patchContent = `--- a/code_snippet.txt\n+++ b/code_snippet.txt\n@@ -1,${linesCount} +1,${linesCount} @@\n`;
+
+    for (let idx = 0; idx < linesCount; idx++) {
+      const lineNum = idx + 1;
+      const originalLine = lines[idx];
+      const finding = patchFindings[lineNum];
+
+      if (finding && finding.suggested_fix) {
+        patchContent += `-${originalLine}\n`;
+        // Ensure multi-line fixes are formatted with a prefix plus (+)
+        const fixLines = finding.suggested_fix.split("\n");
+        fixLines.forEach((fixLine) => {
+          patchContent += `+${fixLine}\n`;
+        });
+      } else {
+        patchContent += ` ${originalLine}\n`;
+      }
+    }
+
+    return patchContent;
+  };
+
+  const handleDownloadPatch = () => {
+    if (!projectData) return;
+    const patchString = generateGitPatch(projectData.project.code_content || "", projectData.findings);
+    if (!patchString) return;
+
+    const blob = new Blob([patchString], { type: "text/x-diff" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `codepulse_remediation.patch`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   if (loading && !projectData) {
@@ -241,8 +335,20 @@ export default function ProjectReportPage() {
             <p className="text-xs text-slate-400 font-mono">UUID: {id}</p>
           </div>
 
-          {/* Dynamic telemetry stats & Export/Share CTAs */}
+          {/* Dynamic telemetry stats & Export/Share/Webhook CTAs */}
           <div className="flex items-center gap-4 flex-wrap">
+            {/* Webhook Settings CTA */}
+            <button
+              onClick={() => setIsWebhookModalOpen(true)}
+              className="px-4 py-2 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-white hover:bg-slate-800/80 transition-all backdrop-blur-md shadow-lg flex items-center gap-2 group cursor-pointer"
+            >
+              <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Integrate Webhook</span>
+            </button>
+
             {/* Share Audit CTA */}
             <button
               onClick={() => setIsShareModalOpen(true)}
@@ -337,9 +443,23 @@ export default function ProjectReportPage() {
 
           {/* Right Pane: Finding Details Inspector */}
           <div className="lg:col-span-4 space-y-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-              Findings List ({findings.length})
-            </h3>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Findings List ({findings.length})
+              </h3>
+              {findings.length > 0 && (
+                <button
+                  onClick={handleDownloadPatch}
+                  className="text-[10px] px-2.5 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all font-sans font-bold flex items-center gap-1.5 cursor-pointer select-none"
+                  title="Generate and download unified Git patch file"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>Download Git Patch</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex flex-col gap-4">
               {findings.length === 0 ? (
@@ -446,7 +566,6 @@ export default function ProjectReportPage() {
       {isShareModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm print:hidden">
           <div className="bg-[#090d16] border border-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl relative space-y-4 animate-fade-in">
-            {/* Close Button */}
             <button
               onClick={() => {
                 setIsShareModalOpen(false);
@@ -472,7 +591,6 @@ export default function ProjectReportPage() {
             )}
 
             <form onSubmit={handleShareSubmit} className="space-y-4">
-              {/* Email Input */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Collaborator Email</label>
                 <input
@@ -485,7 +603,6 @@ export default function ProjectReportPage() {
                 />
               </div>
 
-              {/* Role Select */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Role Permission</label>
                 <select
@@ -498,7 +615,6 @@ export default function ProjectReportPage() {
                 </select>
               </div>
 
-              {/* Submit trigger button */}
               <button
                 type="submit"
                 disabled={isSharingSubmit}
@@ -521,7 +637,76 @@ export default function ProjectReportPage() {
         </div>
       )}
 
-      {/* 5. PRINT-OPTIMIZED DOCUMENT TEMPLATE (Visible ONLY during print layout compilation) */}
+      {/* 5. WEBHOOK INTEGRATION MODAL POPUP */}
+      {isWebhookModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm print:hidden">
+          <div className="bg-[#090d16] border border-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl relative space-y-4 animate-fade-in">
+            <button
+              onClick={() => {
+                setIsWebhookModalOpen(false);
+                setWebhookError(null);
+                setWebhookSuccess(false);
+              }}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white cursor-pointer select-none"
+              title="Close modal"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="space-y-1.5">
+              <h3 className="text-md font-bold text-white">Integrate Slack/Discord Webhook</h3>
+              <p className="text-xs text-slate-400">Receive instant markdown notifications on scan completions and collaborators updates.</p>
+            </div>
+
+            {webhookError && (
+              <div className="p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs text-rose-400">
+                {webhookError}
+              </div>
+            )}
+
+            {webhookSuccess && (
+              <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-400">
+                Webhook endpoint configured successfully!
+              </div>
+            )}
+
+            <form onSubmit={handleWebhookSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Webhook Endpoint URL</label>
+                <input
+                  type="url"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://hooks.slack.com/services/..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isWebhookSubmit}
+                className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-xs font-bold text-white rounded-xl transition-all shadow-lg cursor-pointer flex justify-center items-center gap-2 disabled:opacity-50"
+              >
+                {isWebhookSubmit ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Configuration</span>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. PRINT-OPTIMIZED DOCUMENT TEMPLATE (Visible ONLY during print layout compilation) */}
       <div className="hidden print:block bg-white text-black p-8 font-sans space-y-8 select-text w-full max-w-4xl mx-auto">
         {/* Document Header */}
         <div className="border-b-2 border-slate-900 pb-6 flex justify-between items-start">

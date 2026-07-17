@@ -279,10 +279,38 @@ async function logProjectActivity(req, res) {
   }
 }
 
+// Update standard webhook URL for a project
+async function updateWebhook(req, res) {
+  const { id } = req.params;
+  const { webhookUrl } = req.body;
+
+  if (!id || webhookUrl === undefined) {
+    return res.status(400).json({ error: 'Parameters "id" and "webhookUrl" are required.' });
+  }
+
+  try {
+    const updateQuery = 'UPDATE projects SET webhook_url = $1 WHERE id = $2 RETURNING *';
+    const result = await pool.query(updateQuery, [webhookUrl ? webhookUrl.trim() : null, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Project not found.' });
+    }
+
+    res.status(200).json({
+      success: true,
+      project: result.rows[0]
+    });
+  } catch (err) {
+    console.error('[ProjectController] Update webhook error:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
 module.exports = {
   createProject,
   getProjectsByUser,
   getProjectReport,
   shareProject,
-  logProjectActivity
+  logProjectActivity,
+  updateWebhook
 };
