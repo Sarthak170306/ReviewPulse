@@ -45,10 +45,44 @@ async function createProject(req, res) {
     const projectResult = await client.query(projectInsertQuery, [user_id.trim(), project_name.trim(), code_content]);
     const project = projectResult.rows[0];
 
-    // 2. Run static analysis
-    const analysisResult = analyzerService.analyzeCode(code_content, language);
-    const findings = analysisResult.findings || [];
-    const score = analysisResult.overall_score !== undefined ? analysisResult.overall_score : 100;
+    // 2. Fetch SAST rules from database and run dynamic scanning
+    const rulesRes = await client.query('SELECT name, regex_pattern, severity, description, suggested_fix FROM sast_rules');
+    const dbRules = rulesRes.rows;
+
+    const findings = [];
+    const lines = code_content.split(/\r?\n/);
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNumber = i + 1;
+
+      for (const rule of dbRules) {
+        try {
+          const regex = new RegExp(rule.regex_pattern, 'i');
+          if (regex.test(line)) {
+            findings.push({
+              severity: rule.severity,
+              issue: rule.name,
+              explanation: rule.description || '',
+              suggested_fix: rule.suggested_fix || '',
+              line_number: lineNumber
+            });
+          }
+        } catch (regexErr) {
+          console.error(`[ProjectController] Invalid rule regex: ${rule.regex_pattern}`, regexErr.message);
+        }
+      }
+    }
+
+    // Calculate score
+    let score = 100;
+    for (const finding of findings) {
+      if (finding.severity.toLowerCase() === 'critical') score -= 15;
+      else if (finding.severity.toLowerCase() === 'high') score -= 10;
+      else if (finding.severity.toLowerCase() === 'medium') score -= 5;
+      else score -= 2;
+    }
+    if (score < 0) score = 0;
 
     const summary = `Static analysis complete. Found ${findings.length} issue(s). Quality score: ${score}/100.`;
 
