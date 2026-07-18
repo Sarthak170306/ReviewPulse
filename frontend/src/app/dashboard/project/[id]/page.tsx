@@ -44,6 +44,14 @@ interface ReportResponse {
   findings: Finding[];
   collaborators: Collaborator[];
   activityLogs: ActivityLog[];
+  code_content?: string;
+}
+
+interface FixSuggestionResponse {
+  success: boolean;
+  originalLine: string;
+  refactoredLine: string;
+  explanation: string;
 }
 
 export default function ProjectReportPage() {
@@ -70,6 +78,12 @@ export default function ProjectReportPage() {
   const [webhookError, setWebhookError] = useState<string | null>(null);
   const [webhookSuccess, setWebhookSuccess] = useState(false);
 
+  // AI Auto-Fix suggestions states
+  const [activeFixData, setActiveFixData] = useState<FixSuggestionResponse | null>(null);
+  const [loadingFix, setLoadingFix] = useState(false);
+  const [applySuccess, setApplySuccess] = useState(false);
+  const [editorKey, setEditorKey] = useState(0);
+
   const fetchReport = async () => {
     try {
       setLoading(true);
@@ -85,6 +99,9 @@ export default function ProjectReportPage() {
       
       const resData = await res.json();
       console.log("🔥 FULL BACKEND DATA OBJECT RECEIVED:", resData);
+      if (resData.project && !resData.code_content) {
+        resData.code_content = resData.project.code_content;
+      }
       setProjectData(resData);
       
       if (resData.project && resData.project.webhook_url) {
@@ -108,6 +125,42 @@ export default function ProjectReportPage() {
       fetchReport();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (selectedFinding && id) {
+      const fetchFixSuggestion = async () => {
+        try {
+          setLoadingFix(true);
+          setActiveFixData(null);
+          setApplySuccess(false);
+
+          const res = await fetch(`http://localhost:5000/api/projects/${id}/fix-finding`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              findingId: selectedFinding.id,
+              lineNumber: selectedFinding.line_number
+            })
+          });
+
+          if (!res.ok) {
+            throw new Error("Failed to configure fix metadata.");
+          }
+
+          const fixJson = await res.json();
+          setActiveFixData(fixJson);
+        } catch (err) {
+          console.error("[ProjectReport] Fetching AI fix failed:", err);
+        } finally {
+          setLoadingFix(false);
+        }
+      };
+
+      fetchFixSuggestion();
+    } else {
+      setActiveFixData(null);
+    }
+  }, [selectedFinding, id]);
 
   const handleShareSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +232,110 @@ export default function ProjectReportPage() {
     }
   };
 
+  const handleApplyAiFix = async (targetLineNumber: number, targetRefactoredLine: string) => {
+    try {
+      if (!projectData || !projectData.code_content) return;
+      
+      // Convert multi-line raw string content into an easily indexable array
+      const updatedLinesArray = projectData.code_content.split('\n');
+      
+      // Enforce absolute, unconditional array value hot-swap at the exact index
+      updatedLinesArray[targetLineNumber - 1] = targetRefactoredLine;
+      
+      // Join back cleanly into a single unified continuous payload string block
+      const updatedCodeTextPayload = updatedLinesArray.join('\n');
+      
+      // Force push this new state straight into the component's root data
+      setProjectData((prev: any) => {
+        if (!prev) return null;
+        const nextData = {
+          ...prev,
+          code_content: updatedCodeTextPayload
+        };
+        if (nextData.project) {
+          nextData.project = {
+            ...nextData.project,
+            code_content: updatedCodeTextPayload
+          };
+        }
+        return nextData;
+      });
+      
+      // Force-increment editorKey state parameter counter to force re-render
+      setEditorKey(prev => prev + 1);
+      
+      // Fire network update background sync
+      const activeUser = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Anonymous";
+      const syncResponse = await fetch(`http://localhost:5000/api/projects/${id}/update-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          codeContent: updatedCodeTextPayload,
+          logMessage: `AI Auto-Fix patch applied securely to Line ${targetLineNumber}`,
+          userName: activeUser
+        })
+      });
+      
+      if (syncResponse.ok) {
+        setApplySuccess(true);
+        // Refresh the full layout metrics to populate tracking timelines
+        fetchReport();
+      }
+    } catch (error) {
+      console.error("Critical Client State Alignment Failure:", error);
+    }
+  };
+
+  // Reconstruct standard unified Git Remediation Diff Patch structure
+  const generateGitPatch = (code: string, activeFindings: Finding[]) => {
+    if (!code) return "";
+
+    const lines = code.split("\n");
+    const linesCount = lines.length;
+
+    const patchFindings = activeFindings.reduce<Record<number, Finding>>((acc, f) => {
+      acc[f.line_number] = f;
+      return acc;
+    }, {});
+
+    let patchContent = `--- a/code_snippet.txt\n+++ b/code_snippet.txt\n@@ -1,${linesCount} +1,${linesCount} @@\n`;
+
+    for (let idx = 0; idx < linesCount; idx++) {
+      const lineNum = idx + 1;
+      const originalLine = lines[idx];
+      const finding = patchFindings[lineNum];
+
+      if (finding && finding.suggested_fix) {
+        patchContent += `-${originalLine}\n`;
+        const fixLines = finding.suggested_fix.split("\n");
+        fixLines.forEach((fixLine) => {
+          patchContent += `+${fixLine}\n`;
+        });
+      } else {
+        patchContent += ` ${originalLine}\n`;
+      }
+    }
+
+    return patchContent;
+  };
+
+  const handleDownloadPatch = () => {
+    if (!projectData) return;
+    const currentCode = projectData.project?.code_content || projectData.code_content || "";
+    const patchString = generateGitPatch(currentCode, projectData.findings);
+    if (!patchString) return;
+
+    const blob = new Blob([patchString], { type: "text/x-diff" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `codepulse_remediation.patch`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportPDF = async () => {
     window.print();
 
@@ -198,57 +355,6 @@ export default function ProjectReportPage() {
     } catch (err) {
       console.error("[ProjectReport] Background log activity failed:", err);
     }
-  };
-
-  // Reconstruct standard unified Git Remediation Diff Patch structure
-  const generateGitPatch = (code: string, activeFindings: Finding[]) => {
-    if (!code) return "";
-
-    const lines = code.split("\n");
-    const linesCount = lines.length;
-
-    // Group findings by line number for fast search
-    const patchFindings = activeFindings.reduce<Record<number, Finding>>((acc, f) => {
-      acc[f.line_number] = f;
-      return acc;
-    }, {});
-
-    let patchContent = `--- a/code_snippet.txt\n+++ b/code_snippet.txt\n@@ -1,${linesCount} +1,${linesCount} @@\n`;
-
-    for (let idx = 0; idx < linesCount; idx++) {
-      const lineNum = idx + 1;
-      const originalLine = lines[idx];
-      const finding = patchFindings[lineNum];
-
-      if (finding && finding.suggested_fix) {
-        patchContent += `-${originalLine}\n`;
-        // Ensure multi-line fixes are formatted with a prefix plus (+)
-        const fixLines = finding.suggested_fix.split("\n");
-        fixLines.forEach((fixLine) => {
-          patchContent += `+${fixLine}\n`;
-        });
-      } else {
-        patchContent += ` ${originalLine}\n`;
-      }
-    }
-
-    return patchContent;
-  };
-
-  const handleDownloadPatch = () => {
-    if (!projectData) return;
-    const patchString = generateGitPatch(projectData.project.code_content || "", projectData.findings);
-    if (!patchString) return;
-
-    const blob = new Blob([patchString], { type: "text/x-diff" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `codepulse_remediation.patch`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   if (loading && !projectData) {
@@ -280,7 +386,7 @@ export default function ProjectReportPage() {
   }
 
   const { project, findings, collaborators, activityLogs } = projectData;
-  const rawCode = project?.code_content || "";
+  const rawCode = projectData?.code_content || project?.code_content || "";
 
   // Dynamic severity count calculations
   const highCount = findings.filter(f => f.severity === "High").length;
@@ -397,7 +503,7 @@ export default function ProjectReportPage() {
         {/* Main split-pane container */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Pane: Interactive Code Viewer */}
-          <div className="lg:col-span-8 rounded-2xl border border-slate-900 bg-slate-950/40 overflow-hidden shadow-xl">
+          <div key={editorKey} className="lg:col-span-8 rounded-2xl border border-slate-900 bg-slate-950/40 overflow-hidden shadow-xl">
             <div className="px-6 py-4 border-b border-slate-900 bg-slate-950/60 flex justify-between items-center">
               <span className="text-xs text-slate-400 font-mono">code_snippet.txt</span>
               <span className="text-[10px] text-slate-500">Click highlighted lines to inspect issues</span>
@@ -519,6 +625,69 @@ export default function ProjectReportPage() {
                           {finding.suggested_fix}
                         </div>
                       </div>
+
+                      {/* AI Auto-Fix suggestion container */}
+                      {isSelected && (
+                        <div className="mt-4 pt-4 border-t border-slate-900/60 space-y-4" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                            <h5 className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">AI Auto-Fix Suggestion</h5>
+                          </div>
+
+                          {loadingFix ? (
+                            <div className="flex items-center gap-2 py-4 text-[10px] text-slate-500">
+                              <svg className="animate-spin h-3.5 w-3.5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                              <span>Analyzing refactoring context...</span>
+                            </div>
+                          ) : activeFixData ? (
+                            <div className="space-y-3">
+                              {/* Stacked Git-Style Diff Layout */}
+                              <div className="rounded-xl border border-slate-900 overflow-hidden font-mono text-[9px] divide-y divide-slate-900">
+                                {/* Red block: Original */}
+                                <div className="bg-rose-950/20 text-rose-300 p-2.5 flex items-start gap-2">
+                                  <span className="text-rose-500 font-bold select-none shrink-0">-</span>
+                                  <span className="break-all">{activeFixData.originalLine || " "}</span>
+                                </div>
+                                {/* Green block: Refactored */}
+                                <div className="bg-emerald-950/20 text-emerald-300 p-2.5 flex items-start gap-2">
+                                  <span className="text-emerald-500 font-bold select-none shrink-0">+</span>
+                                  <span className="break-all">{activeFixData.refactoredLine || " "}</span>
+                                </div>
+                              </div>
+
+                              {/* Explanation */}
+                              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-900 text-[10px] text-slate-400 leading-relaxed">
+                                {activeFixData.explanation}
+                              </div>
+
+                              {/* Apply Button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleApplyAiFix(finding.line_number, activeFixData.refactoredLine);
+                                }}
+                                disabled={applySuccess}
+                                className={`w-full py-2 rounded-xl text-[10px] font-bold text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer ${
+                                  applySuccess
+                                    ? "bg-emerald-600 border border-emerald-500"
+                                    : "bg-blue-600 hover:bg-blue-700 border border-blue-500"
+                                }`}
+                              >
+                                {applySuccess ? (
+                                  <span>&check; AI Fix Applied</span>
+                                ) : (
+                                  <span>✨ Apply AI Fix</span>
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-500 italic">No suggestion calculated.</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })

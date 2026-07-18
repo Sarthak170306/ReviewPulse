@@ -20,4 +20,10 @@ router.post('/:id/log', projectController.logProjectActivity);
 // POST /api/projects/:id/webhook
 router.post('/:id/webhook', projectController.updateWebhook);
 
+// POST /api/projects/:id/fix-finding
+router.post('/:id/fix-finding', projectController.generateFindingFix);
+
+// POST /api/projects/:id/update-code
+router.post('/:id/update-code', projectController.updateProjectCode);
+
 module.exports = router;
