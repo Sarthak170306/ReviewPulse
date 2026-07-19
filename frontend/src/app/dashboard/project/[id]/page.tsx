@@ -83,6 +83,7 @@ export default function ProjectReportPage() {
   const [loadingFix, setLoadingFix] = useState(false);
   const [applySuccess, setApplySuccess] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
   const fetchReport = async () => {
     try {
@@ -392,11 +393,23 @@ export default function ProjectReportPage() {
   const highCount = findings.filter(f => f.severity === "High").length;
   const mediumCount = findings.filter(f => f.severity === "Medium").length;
   const lowCount = findings.filter(f => f.severity === "Low").length;
+  const critCount = findings.filter(f => f.severity === "Critical").length;
   
   const totalFindings = findings.length || 1;
   const pctHigh = (highCount / totalFindings) * 100;
   const pctMedium = (mediumCount / totalFindings) * 100;
   const pctLow = (lowCount / totalFindings) * 100;
+
+  // Compliance Readiness Executive Values
+  const totalCriticalHigh = highCount + critCount;
+  const owaspGrade = totalCriticalHigh === 0 ? "A" : totalCriticalHigh <= 2 ? "B" : totalCriticalHigh <= 4 ? "C" : "F";
+
+  const uniqueInfectedLines = new Set(findings.map(f => f.line_number)).size;
+  const totalLinesOfCode = rawCode.split('\n').length || 1;
+
+  const appliedFixesCount = activityLogs.filter(log => log.action.includes('AI Auto-Fix patch applied securely')).length;
+  const totalResolvedAndUnresolved = findings.length + appliedFixesCount;
+  const autonomyPct = totalResolvedAndUnresolved > 0 ? Math.round((appliedFixesCount / totalResolvedAndUnresolved) * 100) : 100;
 
   // Group findings by line number for lookup
   const findingsByLine = findings.reduce<Record<number, Finding[]>>((acc, f) => {
@@ -500,6 +513,60 @@ export default function ProjectReportPage() {
           </div>
         </div>
 
+        {/* Compliance Readiness Executive Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 print:hidden">
+          {/* Card A: OWASP Grade */}
+          <div className="rounded-2xl border border-slate-900 bg-slate-950/40 p-6 backdrop-blur-md shadow-xl flex items-center justify-between">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">OWASP Top 10 Readiness</h4>
+              <p className="text-2xl font-extrabold text-white">Grade {owaspGrade}</p>
+              <p className="text-[10px] text-slate-400">
+                {totalCriticalHigh} Critical/High risks active
+              </p>
+            </div>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg ${
+              owaspGrade === 'A' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+              owaspGrade === 'B' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+              owaspGrade === 'C' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+              'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+            }`}>
+              {owaspGrade}
+            </div>
+          </div>
+
+          {/* Card B: Exposure Surface */}
+          <div className="rounded-2xl border border-slate-900 bg-slate-950/40 p-6 backdrop-blur-md shadow-xl flex items-center justify-between">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Exposure Surface</h4>
+              <p className="text-2xl font-extrabold text-white">
+                {((uniqueInfectedLines / totalLinesOfCode) * 100).toFixed(1)}%
+              </p>
+              <p className="text-[10px] text-slate-400">
+                {uniqueInfectedLines} / {totalLinesOfCode} lines of code affected
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 font-mono text-xs">
+              {uniqueInfectedLines}L
+            </div>
+          </div>
+
+          {/* Card C: System Autonomy Status */}
+          <div className="rounded-2xl border border-slate-900 bg-slate-950/40 p-6 backdrop-blur-md shadow-xl flex items-center justify-between">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">System Autonomy Status</h4>
+              <p className="text-2xl font-extrabold text-white">{autonomyPct}%</p>
+              <p className="text-[10px] text-slate-400">
+                {appliedFixesCount} of {totalResolvedAndUnresolved} issues patched by AI
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400">
+              <svg className="w-5 h-5 text-blue-500 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
         {/* Main split-pane container */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Pane: Interactive Code Viewer */}
@@ -549,21 +616,79 @@ export default function ProjectReportPage() {
 
           {/* Right Pane: Finding Details Inspector */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Findings List ({findings.length})
-              </h3>
+            <div className="flex flex-col gap-3 p-4 border-b border-slate-800">
+              <div className="flex items-center justify-between w-full">
+                <h3 className="text-lg font-bold tracking-wide text-slate-200">FINDINGS LIST ({findings.length})</h3>
+              </div>
               {findings.length > 0 && (
-                <button
-                  onClick={handleDownloadPatch}
-                  className="text-[10px] px-2.5 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all font-sans font-bold flex items-center gap-1.5 cursor-pointer select-none"
-                  title="Generate and download unified Git patch file"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  <span>Download Git Patch</span>
-                </button>
+                <div className="flex items-center gap-2 w-full justify-start overflow-visible">
+                  <button
+                    onClick={handleDownloadPatch}
+                    className="text-[10px] px-2.5 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all font-sans font-bold flex items-center gap-1.5 cursor-pointer select-none shrink-0"
+                    title="Generate and download unified Git patch file"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download Git Patch</span>
+                  </button>
+
+                  <div className="relative inline-block text-left shrink-0">
+                    <button
+                      onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                      className="text-[10px] px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-200 hover:text-white transition-all font-sans font-bold flex items-center gap-1.5 cursor-pointer select-none"
+                    >
+                      <span>⚡ Export Audits</span>
+                      <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {isExportDropdownOpen && (
+                      <div className="absolute left-0 mt-2 w-56 rounded-md bg-slate-900 border border-slate-800 shadow-xl z-50 overflow-hidden py-1 divide-y divide-slate-850 animate-fade-in font-sans">
+                        <button
+                          onClick={() => {
+                            setIsExportDropdownOpen(false);
+                            window.open(`http://localhost:5000/api/projects/${id}/export/pdf`, '_blank');
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-[10px] font-medium text-slate-300 hover:bg-blue-600/10 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <svg className="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          <span>Executive PDF Summary</span>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setIsExportDropdownOpen(false);
+                            try {
+                              const res = await fetch(`http://localhost:5000/api/projects/${id}/export/json`);
+                              if (!res.ok) throw new Error("Failed to load JSON export.");
+                              const data = await res.json();
+                              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `codepulse_dump_${id}.json`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-[10px] font-medium text-slate-300 hover:bg-blue-600/10 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <svg className="w-3.5 h-3.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span>Metadata Dump (JSON)</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 

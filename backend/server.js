@@ -91,9 +91,11 @@ checkDatabaseConnection();
 
 // Wire up API Routes
 const ruleRoutes = require('./routes/ruleRoutes');
+const exportRoutes = require('./routes/exportRoutes');
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/rules', ruleRoutes);
+app.use('/api/projects/:id/export', exportRoutes);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
