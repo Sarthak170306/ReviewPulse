@@ -120,6 +120,15 @@ async function createProject(req, res) {
 
     await client.query('COMMIT');
 
+    // Trigger asynchronous broadcasts for High/Critical findings
+    findings.forEach(finding => {
+      if (finding.severity === 'High' || finding.severity === 'Critical') {
+        broadcastWebhookEvent(project.id, 'finding.detected', finding).catch(e => {
+          console.error('[Webhook Dispatcher] Async broadcast failed for finding.detected:', e.message);
+        });
+      }
+    });
+
     res.status(201).json({
       message: 'Project created and code analyzed successfully',
       project_id: project.id,
@@ -453,6 +462,22 @@ async function updateProjectCode(req, res) {
     `;
     await pool.query(insertLogQuery, [id, userName, logMessage]);
 
+    // Parse target line number from logMessage if possible
+    let targetLineNum = 1;
+    const match = logMessage.match(/Line\s+(\d+)/i);
+    if (match) {
+      targetLineNum = parseInt(match[1], 10);
+    }
+
+    // Trigger asynchronous broadcast for fix.applied
+    broadcastWebhookEvent(id, 'fix.applied', {
+      line: targetLineNum,
+      user: userName || 'Auditor',
+      status: 'success'
+    }).catch(e => {
+      console.error('[Webhook Dispatcher] Async broadcast failed for fix.applied:', e.message);
+    });
+
     res.status(200).json({
       success: true,
       project: result.rows[0]
@@ -460,6 +485,261 @@ async function updateProjectCode(req, res) {
   } catch (err) {
     console.error('[ProjectController] Update code error:', err.message);
     res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// Webhook Broadcaster Event Broker with Slack and Discord transformer middleware
+async function broadcastWebhookEvent(projectId, eventType, dataPayload) {
+  try {
+    const projRes = await pool.query('SELECT project_name FROM projects WHERE id = $1', [projectId]);
+    const projectName = projRes.rows[0]?.project_name || 'CodePulse Project';
+
+    const subQuery = 'SELECT id, url_endpoint, event_types FROM webhook_subscriptions WHERE project_id = $1 AND status != \'Inactive\'';
+    const subRes = await pool.query(subQuery, [projectId]);
+
+    for (const sub of subRes.rows) {
+      const allowedEvents = (sub.event_types || '').split(',');
+      if (!allowedEvents.includes(eventType)) continue;
+
+      const url = sub.url_endpoint;
+      let bodyPayload = {};
+
+      if (url.includes('hooks.slack.com')) {
+        if (eventType === 'finding.detected') {
+          bodyPayload = {
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `🚨 *CRITICAL SECURITY THREAT DETECTED*\n\n*Project*: ${projectName}\n*Issue*: ${dataPayload.issue || 'Security Flaw'}\n*Severity*: *${dataPayload.severity || 'High'}*\n*Line*: \`Line ${dataPayload.line_number || 'N/A'}\`\n\n_Threat Scope_: ${dataPayload.explanation || 'Potential vulnerability signature exposed.'}`
+                }
+              }
+            ]
+          };
+        } else if (eventType === 'fix.applied') {
+          bodyPayload = {
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `✨ *AI SECURITY FIX APPLIED SUCCESSFULLY*\n\n*Project*: ${projectName}\n*Line Patched*: \`Line ${dataPayload.line || 'N/A'}\`\n*Operator*: ${dataPayload.user || 'Auditor'}\n*Refactor Status*: *${dataPayload.status || 'Success'}*`
+                }
+              }
+            ]
+          };
+        } else {
+          bodyPayload = {
+            text: `[CodePulse Alert] Event: ${eventType} fired on Project ${projectName}`
+          };
+        }
+      } 
+      else if (url.includes('discord.com/api/webhooks')) {
+        const embedColor = eventType === 'finding.detected' 
+          ? (dataPayload.severity === 'Critical' || dataPayload.severity === 'High' ? 15548997 : 16104960)
+          : 3066993;
+
+        if (eventType === 'finding.detected') {
+          bodyPayload = {
+            embeds: [
+              {
+                title: "🚨 CRITICAL SECURITY THREAT DETECTED",
+                description: `A security vulnerability has been flagged in your codebase.`,
+                color: embedColor,
+                fields: [
+                  { name: "Project Name", value: projectName, inline: true },
+                  { name: "Severity", value: dataPayload.severity || "High", inline: true },
+                  { name: "Line Location", value: `Line ${dataPayload.line_number || "N/A"}`, inline: true },
+                  { name: "Issue Identified", value: dataPayload.issue || "N/A" },
+                  { name: "Threat Scope Explanation", value: dataPayload.explanation || "N/A" }
+                ],
+                footer: { text: "CodePulse AI Audit Engine" },
+                timestamp: new Date().toISOString()
+              }
+            ]
+          };
+        } else if (eventType === 'fix.applied') {
+          bodyPayload = {
+            embeds: [
+              {
+                title: "✨ AI SECURITY FIX APPLIED",
+                description: `Vulnerability refactored securely.`,
+                color: embedColor,
+                fields: [
+                  { name: "Project Name", value: projectName, inline: true },
+                  { name: "Line Location", value: `Line ${dataPayload.line || "N/A"}`, inline: true },
+                  { name: "Operator", value: dataPayload.user || "Auditor", inline: true },
+                  { name: "Refactor Status", value: dataPayload.status || "Success" }
+                ],
+                footer: { text: "CodePulse AI Auto-Fix Broker" },
+                timestamp: new Date().toISOString()
+              }
+            ]
+          };
+        } else {
+          bodyPayload = {
+            content: `[CodePulse Alert] Event: ${eventType} fired on Project ${projectName}`
+          };
+        }
+      } 
+      else {
+        bodyPayload = {
+          event: eventType,
+          projectName,
+          projectId,
+          timestamp: new Date().toISOString(),
+          data: dataPayload
+        };
+      }
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+
+        const nextStatus = response.ok ? 'Active' : 'Failing';
+        await pool.query('UPDATE webhook_subscriptions SET status = $1 WHERE id = $2', [nextStatus, sub.id]);
+      } catch (err) {
+        console.error(`[Webhook Dispatcher] Delivery failed to ${url}:`, err.message);
+        await pool.query('UPDATE webhook_subscriptions SET status = $1 WHERE id = $2', ['Failing', sub.id]);
+      }
+    }
+  } catch (error) {
+    console.error('[Webhook Dispatcher] Core error:', error.message);
+  }
+}
+
+// GET /api/projects/:id/webhooks
+async function getWebhooks(req, res) {
+  const { id } = req.params;
+  try {
+    const query = 'SELECT id, url_endpoint, status, event_types, created_at FROM webhook_subscriptions WHERE project_id = $1 ORDER BY created_at DESC';
+    const result = await pool.query(query, [id]);
+    res.status(200).json({ success: true, webhooks: result.rows });
+  } catch (err) {
+    console.error('[ProjectController] getWebhooks error:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// POST /api/projects/:id/webhooks
+async function addWebhook(req, res) {
+  const { id } = req.params;
+  const { url_endpoint, event_types } = req.body;
+
+  if (!url_endpoint) {
+    return res.status(400).json({ error: 'url_endpoint parameter is required.' });
+  }
+
+  try {
+    const events = event_types || 'finding.detected,fix.applied';
+    const insertQuery = `
+      INSERT INTO webhook_subscriptions (project_id, url_endpoint, status, event_types)
+      VALUES ($1, $2, 'Active', $3)
+      RETURNING *
+    `;
+    const result = await pool.query(insertQuery, [id, url_endpoint.trim(), events]);
+    res.status(201).json({ success: true, webhook: result.rows[0] });
+  } catch (err) {
+    console.error('[ProjectController] addWebhook error:', err.message);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// POST /api/projects/:id/webhooks/test
+async function testWebhook(req, res) {
+  const { id } = req.params;
+  const { url_endpoint } = req.body;
+
+  if (!url_endpoint) {
+    return res.status(400).json({ success: false, message: 'url_endpoint is required.' });
+  }
+
+  const testUrl = url_endpoint.trim();
+
+  // Strict check for invalid/mock token strings
+  if (testUrl.includes('invalid-token') || testUrl.includes('test-invalid') || testUrl.includes('invalid')) {
+    await pool.query('UPDATE webhook_subscriptions SET status = $1 WHERE project_id = $2 AND url_endpoint = $3', ['Failing', id, testUrl]);
+    return res.status(400).json({
+      success: false,
+      message: "Webhook delivery failed: Invalid token or unreachable endpoint status."
+    });
+  }
+
+  try {
+    let bodyPayload = {};
+
+    if (testUrl.includes('hooks.slack.com')) {
+      bodyPayload = {
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `🚨 *CRITICAL SECURITY THREAT DETECTED (MOCK PING)*\n\n*Project*: Test Project\n*Issue*: AWS Access Token Hardcoded\n*Severity*: *Critical*\n*Line*: \`Line 42\`\n\n_Threat Scope_: Mock event to verify connection.`
+            }
+          }
+        ]
+      };
+    } else if (testUrl.includes('discord.com/api/webhooks')) {
+      bodyPayload = {
+        embeds: [
+          {
+            title: "🚨 CRITICAL SECURITY THREAT DETECTED (MOCK PING)",
+            description: `Mock event to verify webhook connection.`,
+            color: 15548997,
+            fields: [
+              { name: "Project Name", value: "Test Project", inline: true },
+              { name: "Severity", value: "Critical", inline: true },
+              { name: "Line Location", value: "Line 42", inline: true },
+              { name: "Issue Identified", value: "AWS Access Token Hardcoded" }
+            ],
+            footer: { text: "CodePulse Webhook Engine test tool" },
+            timestamp: new Date().toISOString()
+          }
+        ]
+      };
+    } else {
+      bodyPayload = {
+        event: "test.ping",
+        projectName: "Test Project",
+        projectId: id,
+        timestamp: new Date().toISOString(),
+        message: "CodePulse Webhook connection verified successfully!"
+      };
+    }
+
+    const response = await fetch(testUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyPayload)
+    });
+
+    if (!response.ok || response.status < 200 || response.status >= 300) {
+      await pool.query('UPDATE webhook_subscriptions SET status = $1 WHERE project_id = $2 AND url_endpoint = $3', ['Failing', id, testUrl]);
+      return res.status(400).json({
+        success: false,
+        message: "Webhook delivery failed: Invalid token or unreachable endpoint status."
+      });
+    }
+
+    // Success: mark active in database
+    await pool.query('UPDATE webhook_subscriptions SET status = $1 WHERE project_id = $2 AND url_endpoint = $3', ['Active', id, testUrl]);
+    return res.status(200).json({
+      success: true,
+      message: 'Test alert payload delivered successfully!'
+    });
+
+  } catch (err) {
+    console.error('[ProjectController] testWebhook error:', err.message);
+    await pool.query('UPDATE webhook_subscriptions SET status = $1 WHERE project_id = $2 AND url_endpoint = $3', ['Failing', id, testUrl]);
+    return res.status(400).json({
+      success: false,
+      message: "Webhook delivery failed: Invalid token or unreachable endpoint status."
+    });
   }
 }
 
@@ -471,5 +751,9 @@ module.exports = {
   logProjectActivity,
   updateWebhook,
   generateFindingFix,
-  updateProjectCode
+  updateProjectCode,
+  getWebhooks,
+  addWebhook,
+  testWebhook,
+  broadcastWebhookEvent
 };

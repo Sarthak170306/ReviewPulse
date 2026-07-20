@@ -78,6 +78,18 @@ async function checkDatabaseConnection() {
       `);
     }
 
+    // Create webhook_subscriptions table if not exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        url_endpoint TEXT NOT NULL,
+        status TEXT DEFAULT 'Active',
+        event_types TEXT DEFAULT 'finding.detected,fix.applied',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('[Database] Collaborators, Activity, Webhook, and SAST rules tables initialized successfully');
     client.release();
   } catch (err) {

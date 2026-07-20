@@ -85,6 +85,25 @@ export default function ProjectReportPage() {
   const [editorKey, setEditorKey] = useState(0);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
+  // Webhook Integrations states
+  const [webhooks, setWebhooks] = useState<any[]>([]);
+  const [newWebhookUrl, setNewWebhookUrl] = useState("");
+  const [isAddingWebhook, setIsAddingWebhook] = useState(false);
+  const [testingWebhookId, setTestingWebhookId] = useState<string | null>(null);
+  const [testFeedback, setTestFeedback] = useState<Record<string, string>>({});
+
+  const fetchWebhooks = async () => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/projects/${id}/webhooks`);
+      if (res.ok) {
+        const data = await res.json();
+        setWebhooks(data.webhooks || []);
+      }
+    } catch (err) {
+      console.error("Failed to load webhook list:", err);
+    }
+  };
+
   const fetchReport = async () => {
     try {
       setLoading(true);
@@ -124,6 +143,7 @@ export default function ProjectReportPage() {
   useEffect(() => {
     if (id) {
       fetchReport();
+      fetchWebhooks();
     }
   }, [id]);
 
@@ -335,6 +355,60 @@ export default function ProjectReportPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleAddWebhook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWebhookUrl.trim()) return;
+
+    try {
+      setIsAddingWebhook(true);
+      const res = await fetch(`http://localhost:5000/api/projects/${id}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url_endpoint: newWebhookUrl.trim(),
+          event_types: "finding.detected,fix.applied"
+        })
+      });
+
+      if (res.ok) {
+        setNewWebhookUrl("");
+        fetchWebhooks();
+      }
+    } catch (err) {
+      console.error("Failed to add webhook endpoint:", err);
+    } finally {
+      setIsAddingWebhook(false);
+    }
+  };
+
+  const handleTestWebhook = async (webhookId: string, urlEndpoint: string) => {
+    try {
+      setTestingWebhookId(webhookId);
+      setTestFeedback(prev => ({ ...prev, [webhookId]: "Sending mock security alert..." }));
+      
+      const res = await fetch(`http://localhost:5000/api/projects/${id}/webhooks/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url_endpoint: urlEndpoint })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestFeedback(prev => ({ ...prev, [webhookId]: "🟢 Mock security ping delivered!" }));
+      } else {
+        setTestFeedback(prev => ({ ...prev, [webhookId]: `🔴 Webhook delivery failed: ${data.message || "Invalid token or unreachable endpoint status."}` }));
+      }
+      
+      fetchWebhooks();
+    } catch (err) {
+      console.error("Webhook test failed:", err);
+      setTestFeedback(prev => ({ ...prev, [webhookId]: "🔴 Webhook delivery failed: Connection Error" }));
+      fetchWebhooks();
+    } finally {
+      setTestingWebhookId(null);
+    }
   };
 
   const handleExportPDF = async () => {
@@ -564,6 +638,83 @@ export default function ProjectReportPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               </svg>
             </div>
+          </div>
+        </div>
+
+        {/* Real-time Alert Integrations Panel */}
+        <div className="rounded-2xl border border-slate-900 bg-slate-950/40 p-6 backdrop-blur-md shadow-xl space-y-6 print:hidden">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <h3 className="text-sm font-bold text-white tracking-wider uppercase">🔌 Real-time Alert Integrations</h3>
+          </div>
+
+          <form onSubmit={handleAddWebhook} className="flex gap-3 max-w-2xl">
+            <input
+              type="url"
+              required
+              placeholder="Append slack/discord or custom payload webhook endpoint (e.g. https://hooks.slack.com/services/...)"
+              value={newWebhookUrl}
+              onChange={(e) => setNewWebhookUrl(e.target.value)}
+              className="flex-1 bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500/50 transition-all font-mono"
+            />
+            <button
+              type="submit"
+              disabled={isAddingWebhook}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-xs font-bold text-white rounded-xl transition-all shadow-md cursor-pointer shrink-0 select-none"
+            >
+              {isAddingWebhook ? "Adding..." : "Add Endpoint"}
+            </button>
+          </form>
+
+          {/* Webhook Subscription Table list */}
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Registered Alert Destinations</h4>
+            {webhooks.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No webhooks configured for this project yet.</p>
+            ) : (
+              <div className="divide-y divide-slate-900 border border-slate-900 rounded-xl overflow-hidden bg-slate-950/20 font-mono text-xs">
+                {webhooks.map((wh) => (
+                  <div key={wh.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-900/10 transition-all">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <p className="text-slate-300 truncate font-semibold">{wh.url_endpoint}</p>
+                      <div className="flex gap-2 text-[10px] text-slate-500">
+                        <span>Events: <strong className="text-slate-400">{wh.event_types}</strong></span>
+                        <span>&bull;</span>
+                        <span>Created: {new Date(wh.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 shrink-0">
+                      {/* Active Status Badge */}
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold border ${
+                        wh.status === 'Active' 
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                          : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                      }`}>
+                        <span className={`w-1 h-1 rounded-full ${wh.status === 'Active' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                        {wh.status === 'Active' ? 'Active' : 'Failing'}
+                      </span>
+
+                      {/* Test Ping Action button */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleTestWebhook(wh.id, wh.url_endpoint)}
+                          disabled={testingWebhookId === wh.id}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 transition-all font-sans font-bold cursor-pointer select-none"
+                        >
+                          {testingWebhookId === wh.id ? "Pinging..." : "⚡ Test Ping"}
+                        </button>
+                        {testFeedback[wh.id] && (
+                          <span className="text-[10px] text-slate-400 transition-all animate-fade-in font-sans">{testFeedback[wh.id]}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

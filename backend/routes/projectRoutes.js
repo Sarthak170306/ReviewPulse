@@ -26,4 +26,13 @@ router.post('/:id/fix-finding', projectController.generateFindingFix);
 // POST /api/projects/:id/update-code
 router.post('/:id/update-code', projectController.updateProjectCode);
 
+// GET /api/projects/:id/webhooks
+router.get('/:id/webhooks', projectController.getWebhooks);
+
+// POST /api/projects/:id/webhooks
+router.post('/:id/webhooks', projectController.addWebhook);
+
+// POST /api/projects/:id/webhooks/test
+router.post('/:id/webhooks/test', projectController.testWebhook);
+
 module.exports = router;
