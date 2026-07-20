@@ -3,7 +3,6 @@ const analyzerService = require('../services/analyzerService');
 
 // Create a new project and deduct 1 credit
 async function createProject(req, res) {
-  console.log("📥 BACKEND ROUTE HIT! Incoming body payload:", req.body);
   const { user_id, project_name, code_content, language = 'javascript' } = req.body;
 
   // Validate fields
@@ -33,7 +32,6 @@ async function createProject(req, res) {
     }
 
     const currentCredits = userResult.rows[0].credits;
-    console.log("🔍 CREDITS CHECK FOR USER:", user_id, "BALANCE:", currentCredits);
 
     if (currentCredits === null || currentCredits <= 0) {
       await client.query('ROLLBACK');
@@ -139,11 +137,10 @@ async function createProject(req, res) {
     });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error("❌ TRANSACTION CRASH DETAILS:", err);
+    console.error('[ProjectController] Create project transaction failed:', err.message);
     res.status(500).json({ 
       error: 'Database operation failed', 
-      details: err.message,
-      stack: err.stack 
+      details: err.message
     });
   } finally {
     client.release();

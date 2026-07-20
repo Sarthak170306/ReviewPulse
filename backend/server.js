@@ -3,6 +3,8 @@ const cors = require('cors');
 const pool = require('./config/db');
 const userRoutes = require('./routes/userRoutes');
 const projectRoutes = require('./routes/projectRoutes');
+const ruleRoutes = require('./routes/ruleRoutes');
+const exportRoutes = require('./routes/exportRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -11,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Verify database connection at startup
+// Database setup
 let dbConnected = false;
 let dbErrorMsg = null;
 
@@ -23,7 +25,7 @@ async function checkDatabaseConnection() {
     dbErrorMsg = null;
     console.log(`[Database] Connected successfully to Supabase PostgreSQL at ${res.rows[0].now}`);
 
-    // Create project_collaborators table if not exists
+    // Create tables if not exist
     await client.query(`
       CREATE TABLE IF NOT EXISTS project_collaborators (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -34,7 +36,6 @@ async function checkDatabaseConnection() {
       )
     `);
 
-    // Create activity_logs table if not exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS activity_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,12 +46,10 @@ async function checkDatabaseConnection() {
       )
     `);
 
-    // Create webhook_url column if not exists in projects table
     await client.query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS webhook_url TEXT;
     `);
 
-    // Create sast_rules table if not exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS sast_rules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -63,10 +62,10 @@ async function checkDatabaseConnection() {
       )
     `);
 
-    // Seed sast_rules baseline corporate signatures if empty
+    // Seed default rules if empty
     const rulesCountRes = await client.query('SELECT COUNT(*) FROM sast_rules');
     if (parseInt(rulesCountRes.rows[0].count, 10) === 0) {
-      console.log('[Database] Seeding sast_rules with baseline corporate signatures...');
+      console.log('[Database] Seeding default SAST rules...');
       await client.query(`
         INSERT INTO sast_rules (name, regex_pattern, severity, description, suggested_fix)
         VALUES 
@@ -78,7 +77,6 @@ async function checkDatabaseConnection() {
       `);
     }
 
-    // Create webhook_subscriptions table if not exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS webhook_subscriptions (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,26 +88,24 @@ async function checkDatabaseConnection() {
       )
     `);
 
-    console.log('[Database] Collaborators, Activity, Webhook, and SAST rules tables initialized successfully');
+    console.log('[Database] Tables initialized successfully');
     client.release();
   } catch (err) {
     dbConnected = false;
     dbErrorMsg = err.message;
-    console.error('[Database] Connection or table setup failed:', err.message);
+    console.error('[Database] Connection failed:', err.message);
   }
 }
 
 checkDatabaseConnection();
 
-// Wire up API Routes
-const ruleRoutes = require('./routes/ruleRoutes');
-const exportRoutes = require('./routes/exportRoutes');
+// Routes
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/rules', ruleRoutes);
 app.use('/api/projects/:id/export', exportRoutes);
 
-// Health check endpoint
+// Health check
 app.get('/api/health', async (req, res) => {
   if (!dbConnected) {
     await checkDatabaseConnection();
@@ -126,12 +122,12 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// Basic landing endpoint
+// Home endpoint
 app.get('/', (req, res) => {
-  res.json({ message: 'CodePulse AI API is up and running.' });
+  res.json({ message: 'CodePulse AI API is running' });
 });
 
-// Start Server
+// Start server
 app.listen(PORT, () => {
   console.log(`[Server] Running on port ${PORT}`);
 });

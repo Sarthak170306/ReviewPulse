@@ -57,7 +57,7 @@ export default async function LandingPage() {
         {/* Glow-in-the-dark Badge */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-xs font-semibold text-blue-400 mb-6 shadow-[0_0_15px_rgba(59,130,246,0.15)] animate-pulse">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-          Day 1 Launch: Core Snippet Uploads
+          Production Release: AI SAST Engine Live
         </div>
 
         <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight max-w-4xl leading-tight sm:leading-none text-white">
@@ -161,7 +161,7 @@ async function registerUser(username, password) {
             Supercharged Reviewing Workflow
           </h2>
           <p className="mt-4 text-slate-400 leading-relaxed">
-            Eliminate bugs and code-smells before they hit production. Designed to handle Day 1 uploading features seamlessly.
+            Eliminate bugs and code-smells before they hit production. Designed to handle source code uploads and security analysis seamlessly.
           </p>
         </div>
 

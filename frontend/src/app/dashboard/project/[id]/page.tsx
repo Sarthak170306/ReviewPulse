@@ -118,7 +118,6 @@ export default function ProjectReportPage() {
       }
       
       const resData = await res.json();
-      console.log("🔥 FULL BACKEND DATA OBJECT RECEIVED:", resData);
       if (resData.project && !resData.code_content) {
         resData.code_content = resData.project.code_content;
       }
@@ -972,7 +971,7 @@ export default function ProjectReportPage() {
           </div>
         </div>
 
-        {/* 3. TIMELINE-BASED ACTIVITY TRAIL COMPONENT */}
+        {/* Activity log timeline */}
         <div className="border-t border-slate-900/60 pt-8 mt-8">
           <div className="flex items-center gap-2 mb-6">
             <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1007,7 +1006,7 @@ export default function ProjectReportPage() {
         </div>
       </div>
 
-      {/* 4. SHARE COLLABORATOR MODAL POPUP */}
+      {/* Share project modal */}
       {isShareModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm print:hidden">
           <div className="bg-[#090d16] border border-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl relative space-y-4 animate-fade-in">
@@ -1082,7 +1081,7 @@ export default function ProjectReportPage() {
         </div>
       )}
 
-      {/* 5. WEBHOOK INTEGRATION MODAL POPUP */}
+      {/* Webhook modal */}
       {isWebhookModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm print:hidden">
           <div className="bg-[#090d16] border border-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl relative space-y-4 animate-fade-in">

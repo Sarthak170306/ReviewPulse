@@ -4,39 +4,39 @@ CodePulse AI is an enterprise-grade Static Application Security Testing (SAST) p
 
 ---
 
-## 🛠️ Core Architecture & Features
+## 🛠️ Core Modules
 
-### 1. High-Performance SAST Scan Engine
-* Custom AST (Abstract Syntax Tree) rule framework parsing logic blocks for security patterns.
-* Automated tracking of critical vulnerabilities: Hardcoded Credentials, Exposed JWT Secrets, Dynamic Code Injection, and Suppressed Catch Blocks.
+### 1. AST Core Engine
+- Custom Abstract Syntax Tree (AST) signature parsing logic evaluating source code against corporate baseline rules.
+- Continuous signature inspection tracking hardcoded API credentials, exposed secret keys, unsafe dynamic code execution, and unhandled exception blocks.
 
-### 2. Live Git-Style Inline Fix Engine
-* Real-time Red/Green differential rendering comparing insecure vs refactored secure layouts.
-* Advanced UI dynamic re-rendering mechanism executing instant cache-free DOM layout hot-swapping using localized state synchronization.
+### 2. Remediation Pipeline
+- Real-time side-by-side Red/Green differential code rendering comparing baseline vulnerabilities with secure refactored code.
+- Optimized DOM key virtualization mechanism executing instant, cache-free UI viewport hot-swapping and atomic state synchronization.
 
-### 3. Enterprise Reporting & Governance
-* Executive Compliance Analytics Dashboards calculating live OWASP Top 10 readiness metrics.
-* Binary streaming PDF Report Engine and raw technical JSON meta dumps structured for C-Suite audits and developers alike.
+### 3. Compliance Reporting
+- Executive analytics dashboard calculating live OWASP Top 10 readiness metrics, exposure surface percentages, and system autonomy stats.
+- Programmatic PDF generation engine and developer JSON metadata export tools for C-Suite governance and security audits.
 
-### 4. Resilient Real-Time Event Webhooks
-* Outbound alert publisher utilizing dedicated webhook subscription routing models.
-* Dynamic payload formatters formatting beautiful system warning logs natively for Slack Markdown Blocks and Discord Embeds with bulletproof connection handshake error validation (Active/Failing status tracking).
+### 4. Event Notifications Hook
+- Asynchronous outbound event publisher supporting custom webhook subscriptions for security events.
+- Channel formatters delivering rich native Markdown blocks for Slack and color-coded Rich Embed cards for Discord with real-time connection status validation.
 
 ---
 
 ## 💻 Tech Stack
 
-* **Frontend:** Next.js, React (State Virtualization Engines), Tailwind CSS
-* **Backend:** Node.js, Express, PostgreSQL / Supabase
-* **Security & Engine:** Custom SAST Rule Engine, PDFKit Report Generator, Outbound Slack/Discord Webhooks
+- **Frontend:** Next.js, React, Tailwind CSS, TypeScript
+- **Backend:** Node.js, Express, PostgreSQL / Supabase, PDFKit
+- **Integrations:** Outbound Slack / Discord Webhooks, Unified Git Patch Generator
 
 ---
 
 ## 🚀 Getting Started
 
 ### 📋 Prerequisites
-* Node.js (v18+ recommended)
-* NPM / Yarn
+- Node.js (v18+ recommended)
+- PostgreSQL database or Supabase connection string
 
 ### 🔧 Installation & Setup
 
@@ -46,14 +46,14 @@ CodePulse AI is an enterprise-grade Static Application Security Testing (SAST) p
    cd ReviewPulse
    ```
 
-2. **Backend Setup:**
+2. **Backend Configuration:**
    ```bash
    cd backend
    npm install
    npm run dev
    ```
 
-3. **Frontend Setup:**
+3. **Frontend Configuration:**
    ```bash
    cd frontend
    npm install
